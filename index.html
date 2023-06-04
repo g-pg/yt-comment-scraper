@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>YouTube Comments Scraper</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <main>
+        <div class="container">
+            <h1>YouTube Comment Scraper 1.0</h1>
+            <h2>Scrape by comment author</h2>
+
+            <div class="form-wrapper">
+                <form onsubmit="handleSubmit(event)">
+                    <div class="input-btn-wrapper">
+                        <input type="text" class="api-input" placeholder="API Key" oninput="handleChange(event, 'key')">
+                        <button class="input-btn" type="button" onclick="loadClient()">Activate</button>
+                    </div>
+                    <input type="text" class="video-input" placeholder="Video ID"
+                        oninput="handleChange(event, 'videoId')">
+                    <div class="input-btn-wrapper">
+
+                        <textarea type="text" class="keywords-input"
+                            placeholder="Keywords (split, with, commas)"></textarea>
+
+                        <div class="add-reset-wrapper">
+                            <button type='button' class="input-btn" id="add-keyword"
+                                onclick="handleAddKeyword(event)">Add</button>
+                            <button type="button" class="input-btn" id="reset-keywords"
+                                onclick="resetKeywords()">Reset</button>
+                        </div>
+                    </div>
+                    <button type="submit" class="search-btn input-btn">Search</button>
+                </form>
+                <p class="keywords">Keywords: <span id="keywords"></span></p>
+            </div>
+            <div class="results-container">
+
+                <p class="searching-alert">Searching...</p>
+                <ul id="comments-list">
+                </ul>
+            </div>
+        </div>
+    </main>
+
+
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="./api_key.js"></script>
+    <script>
+        let gapiLoaded = false;
+        const searchBtn = document.querySelector('.search-btn');
+        const addKeywordBtn = document.getElementById('add-keyword');
+        const keywordsInput = document.querySelector('.keywords-input')
+        const keywordsEl = document.getElementById('keywords');
+        const searchingAlert = document.querySelector('.searching-alert');
+        const commentsList = document.querySelector('#comments-list');
+        let commentsFound = []
+
+        const formData = {
+            key: window.apiKey,
+            videoId: 'WtrT3z16N3U',
+            keywords: [],
+            getRegex() {
+                return new RegExp(this.keywords.join("|"), "gi");
+            }
+        }
+
+
+        function handleAddKeyword(event) {
+            if (!keywordsInput.value) return;
+            formData.keywords.push(...keywordsInput.value.split(','))
+            keywordsEl.textContent = formData.keywords.join(', ');
+            keywordsInput.value = '';
+            console.log(formData.keywords);
+        }
+        function resetKeywords() {
+            formData.keywords = [];
+            keywordsEl.textContent = '';
+        }
+        function handleChange(event, prop) {
+            formData[prop] = event.target.value
+            console.log(formData)
+
+        }
+
+
+        function loadClient() {
+            gapi.load('client', async function () {
+                try {
+                    await gapi.client.setApiKey(formData.key);
+                    await gapi.client.load("https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest");
+                    alert('Success: Valid Key')
+                    gapiLoaded = true;
+                } catch (error) {
+                    alert('Invalid key')
+                }
+            })
+        }
+
+
+        function handleSubmit(event) {
+            event.preventDefault();
+            if (!gapiLoaded) {
+                return alert('Please, activate your API key.')
+            }
+            searchingAlert.style.display = 'unset'
+            retrieveComments();
+        }
+
+
+
+        async function retrieveComments(nextPageToken) {
+            const options = {
+                part: "snippet",
+                videoId: formData.videoId,
+                maxResults: 100,
+            }
+            if (nextPageToken) options.pageToken = nextPageToken;
+
+            try {
+                const res = await gapi.client.youtube.commentThreads.list(options);
+                const comments = await res.result.items;
+
+                if (comments.length === 0) return alert('No author found')
+
+                comments.forEach(c => {
+                    const commId = c.snippet.topLevelComment.id;
+                    const author = c.snippet.topLevelComment.snippet.authorDisplayName;
+                    const comment = c.snippet.topLevelComment.snippet.textDisplay;
+                    const channel = c.snippet.topLevelComment.snippet.authorChannelUrl;
+                    const published = c.snippet.topLevelComment.snippet.publishedAt;
+
+                    if (author.match(formData.getRegex())) {
+                        commentsFound.push({
+                            author: author,
+                            comment: comment,
+                            channel: channel,
+                            published: published,
+                        });
+                    }
+                })
+
+                if (res.result.nextPageToken) {
+                    retrieveComments(res.result.nextPageToken)
+                } else {
+                    renderComments();
+                }
+
+            } catch (error) {
+                searchingAlert.style.display = 'none'
+                console.log(error);
+                alert('Error: ', error.message)
+            }
+
+        }
+
+        function renderComments() {
+            searchingAlert.style.display = 'none';
+            if (commentsFound.length < 1) return alert('No author found')
+            const listItems = commentsFound.map(el => {
+                return `
+                    <li>
+                        <p> <span class="li-field">Author: </span><a href="${el.channel}">${el.author}</a> </p>
+                        <p><span class="li-field">Comment: </span>${el.comment}</p>
+                        <p><span class="li-field">Published at: </span> ${el.published}</p>
+                    </li>
+
+                `
+            })
+
+            commentsList.innerHTML = listItems.join('')
+            commentsFound = []
+        }
+
+    </script>
+</body>
+
+</html>
